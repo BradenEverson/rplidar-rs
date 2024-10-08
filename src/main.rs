@@ -1,3 +1,4 @@
+use rppal::gpio::Gpio;
 use rppal::uart::{Parity, Uart};
 use std::time::Duration;
 use std::thread;
@@ -5,8 +6,13 @@ use std::thread;
 const CMD_STOP: u8 = 0x25;
 const CMD_SCAN: u8 = 0x20;
 const CMD_RESET: u8 = 0x40;
+const MOTOR_CONTROL_PIN: u8 = 18;
 
 fn main() {
+    let gpio = Gpio::new().expect("Failed to setup GPIO");
+    let mut motor_pin = gpio.get(MOTOR_CONTROL_PIN).expect("Failed to establish motor pin").into_output();
+
+    motor_pin.set_high();
     let mut uart = Uart::new(115_200, Parity::None, 8, 1).expect("Failed to initialize UART");
     uart.set_read_mode(255, Duration::from_millis(500)).expect("Failed to set timeout");
 
@@ -23,9 +29,12 @@ fn main() {
             Ok(bytes_read) if bytes_read > 0 => {
                 parse_scan_data(&buffer[..bytes_read]);
             }
-            _ => (),
+            _ => break,
         }
     }
+
+    motor_pin.set_low();
+    send_command(&mut uart, CMD_STOP);
 }
 
 fn send_command(uart: &mut Uart, command: u8) {
