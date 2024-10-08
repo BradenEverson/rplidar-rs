@@ -49,18 +49,21 @@ fn parse_scan_data(data: &[u8]) {
 
     let mut index = 0;
     while index + 5 <= data.len() {
-        // Each packet is 5 bytes as per the datasheet:
-        // Byte 1: Quality, Byte 2-3: Angle, Byte 4-5: Distance
-        let quality = data[index];
-        let angle = ((data[index + 2] as u16) << 8 | data[index + 1] as u16) >> 1;
-        let distance = ((data[index + 4] as u16) << 8 | data[index + 3] as u16) / 4;
+        let quality = (data[index] >> 2) & 0x3F;  // Extract quality (upper 6 bits)
+        let raw_angle = ((data[index + 2] as u16) << 8 | data[index + 1] as u16) >> 1;
+        let angle_in_degrees = (raw_angle as f32) / 64.0;  // Convert to degrees
 
-        let angle_in_degrees = (angle as f32) / 64.0;
+        let raw_distance = (data[index + 4] as u16) << 8 | data[index + 3] as u16;
+        let distance_in_mm = raw_distance as f32 / 4.0;  // Convert to mm
 
-        println!(
-            "Quality: {}, Angle: {:.2}°, Distance: {} mm",
-            quality, angle_in_degrees, distance
-        );
+        if quality > 10 && raw_distance > 0 && distance_in_mm < 12000.0 {
+            println!(
+                "Quality: {}, Angle: {:.2}°, Distance: {:.2} mm",
+                quality, angle_in_degrees, distance_in_mm
+            );
+        } else {
+            println!("Invalid measurement or noisy data (Quality: {}, Distance: {})", quality, distance_in_mm);
+        }
 
         index += 5;
     }
