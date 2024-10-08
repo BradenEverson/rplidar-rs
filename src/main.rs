@@ -1,55 +1,58 @@
-use rppal::gpio::Gpio;
 use rppal::uart::{Parity, Uart};
 use std::time::Duration;
+use std::thread;
 
-const MOTOR_CONTROL_PIN: u8 = 18;
-const UART_BAUD_RATE: u32 = 115_200;
+const CMD_STOP: u8 = 0x25;
+const CMD_SCAN: u8 = 0x20;
+const CMD_RESET: u8 = 0x40;
 
 fn main() {
-    let gpio = Gpio::new().expect("Failed to setup GPIO");
-    let mut motor_pin = gpio.get(MOTOR_CONTROL_PIN).expect("Failed to establish motor pin").into_output();
+    let mut uart = Uart::new(115_200, Parity::None, 8, 1).expect("Failed to initialize UART");
+    uart.set_read_mode(255, Duration::from_millis(500)).expect("Failed to set timeout");
 
-    motor_pin.set_high();
-    // Setup UART
-    let mut uart = Uart::new(UART_BAUD_RATE, Parity::None, 8, 1).expect("Failed to set UART channel");
-    uart.set_read_mode(255, Duration::from_secs(1)).expect("Failed to set read mode");
+    send_command(&mut uart, CMD_RESET);
+    println!("Sent reset command to RPLIDAR. Waiting 2 seconds...");
+    thread::sleep(Duration::from_secs(2));
 
-    // Send start scan command
-    let start_scan_cmd: [u8; 2] = [0xA5, 0x20];
-    uart.write(&start_scan_cmd).expect("Failed to send start cmd");
+    send_command(&mut uart, CMD_SCAN);
+    println!("Started scanning...");
 
-    println!("RPLidar A1 scanning...");
-
-    let mut buffer: Vec<u8> = vec![0; 5];  // Buffer to hold one complete response packet
-
+    let mut buffer: [u8; 255] = [0; 255];
     loop {
         match uart.read(&mut buffer) {
-            Ok(_size) => {
-                // Parse a single data packet (5 bytes)
-                if buffer.len() == 5 {
-                    let start_flag = buffer[0] & 0x01;  // S bit is the LSB of byte 0
-                    let quality = buffer[0] >> 2;       // Quality is bits 2-7 of byte 0
-
-                    let angle_q6: u16 = ((buffer[1] as u16) >> 1) | ((buffer[2] as u16) << 7);
-                    let actual_angle = angle_q6 as f32 / 64.0;  // Convert fixed-point to float
-
-                    let distance_q2: u16 = (buffer[3] as u16) | ((buffer[4] as u16) << 8);
-                    let actual_distance = distance_q2 as f32 / 4.0;  // Convert fixed-point to float
-
-                    println!(
-                        "Start Flag: {}, Quality: {}, Angle: {:.2}°, Distance: {:.2} mm",
-                        start_flag, quality, actual_angle, actual_distance
-                    );
-
-                    if start_flag == 1 {
-                        println!("New 360° scan started!");
-                    }
-                }
+            Ok(bytes_read) if bytes_read > 0 => {
+                parse_scan_data(&buffer[..bytes_read]);
             }
-            Err(e) => {
-                eprintln!("Failed to read from UART: {}", e);
-                break;
-            }
+            _ => (),
         }
+    }
+}
+
+fn send_command(uart: &mut Uart, command: u8) {
+    let cmd_packet = [0xA5, command];
+    uart.write(&cmd_packet).expect("Failed to send command");
+}
+
+fn parse_scan_data(data: &[u8]) {
+    if data.len() < 5 {
+        return;
+    }
+
+    let mut index = 0;
+    while index + 5 <= data.len() {
+        // Each packet is 5 bytes as per the datasheet:
+        // Byte 1: Quality, Byte 2-3: Angle, Byte 4-5: Distance
+        let quality = data[index];
+        let angle = ((data[index + 2] as u16) << 8 | data[index + 1] as u16) >> 1;
+        let distance = ((data[index + 4] as u16) << 8 | data[index + 3] as u16) / 4;
+
+        let angle_in_degrees = (angle as f32) / 64.0;
+
+        println!(
+            "Quality: {}, Angle: {:.2}°, Distance: {} mm",
+            quality, angle_in_degrees, distance
+        );
+
+        index += 5;
     }
 }
