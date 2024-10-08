@@ -16,6 +16,8 @@ fn main() {
     let start_scan_cmd: [u8; 2] = [0xA5, 0x20];
     uart.write(&start_scan_cmd).expect("Failed to send start cmd");
 
+    std::thread::sleep(Duration::from_millis(100));
+
     println!("RPLidar A1 scanning...");
 
     let mut buffer: Vec<u8> = vec![0; 512];
@@ -25,7 +27,14 @@ fn main() {
             Ok(n) if n > 0 => {
                 println!("Received {} bytes: {:X?}", n, &buffer[..n]);
             }
-            _ => panic!("Read error!")
+            Ok(_) => {
+                println!("No data received, retrying...");
+                std::thread::sleep(Duration::from_millis(500));  // Retry after a short delay.
+            }
+            Err(e) => {
+                eprintln!("Failed to read from UART: {}", e);
+                break;
+            }
         }
     }
 }
