@@ -29,8 +29,3 @@ This project contains a Rust-based implementation for interfacing with the **RpL
 1. Compile the project using `cargo build`.
 2. Run the example using `cargo run --example hello_lidar`.
 3. Ensure that the LIDAR motor pin is connected, and the UART Rx/Tx pins are correctly set up.
-
-### Features
-- Command control for LIDAR operations (start, stop, reset).
-- Real-time data processing using callbacks.
-- Quality filtering for LIDAR measurements to minimize noise.
